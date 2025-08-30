@@ -3,6 +3,7 @@ package io.github.mcengine.extension.addon.essential.fly.command;
 import io.github.mcengine.api.core.extension.logger.MCEngineExtensionLogger;
 import io.github.mcengine.extension.addon.essential.fly.database.FlyDB;
 import io.github.mcengine.extension.addon.essential.fly.util.FlyDuration;
+import org.bukkit.Bukkit;
 import org.bukkit.command.Command;
 import org.bukkit.command.CommandSender;
 import org.bukkit.entity.Player;
@@ -10,12 +11,19 @@ import org.bukkit.entity.Player;
 /**
  * Handles the {@code /fly} command.
  * <p>
- * Toggle behavior:
+ * Supported syntax:
  * <ul>
- *   <li><b>ON</b>: Requires player to have {@code fly_duration > 0}. If the duration is {@code 0}, activation is denied.</li>
- *   <li><b>OFF</b>: Disables flight and cancels the player's per-player task immediately.</li>
+ *   <li><b>/fly</b> or <b>/fly on</b> — enable flight if {@code fly_duration > 0}</li>
+ *   <li><b>/fly off</b> — disable flight</li>
+ *   <li><b>/fly time add &lt;player&gt; &lt;seconds&gt;</b> — add seconds to a player's remaining time
+ *       (requires {@code essential.fly.add})</li>
  * </ul>
- * Note: This implementation treats {@code 0} as <b>no remaining time</b> (not unlimited).
+ * <p>
+ * Notes:
+ * <ul>
+ *   <li>This implementation treats {@code 0} as <b>no remaining time</b> (not unlimited).</li>
+ *   <li>Per-player timers are handled by {@link FlyDuration}.</li>
+ * </ul>
  */
 public class FlyCommand {
 
@@ -46,6 +54,11 @@ public class FlyCommand {
      * @return true if handled.
      */
     public boolean onCommand(CommandSender sender, Command cmd, String label, String[] args) {
+        // Admin subcommand: /fly time add <player> <seconds>
+        if (args.length >= 1 && args[0].equalsIgnoreCase("time")) {
+            return handleTimeSubcommand(sender, args);
+        }
+
         if (!(sender instanceof Player player)) {
             sender.sendMessage("Only players can use /fly.");
             return true;
@@ -80,6 +93,54 @@ public class FlyCommand {
         }
 
         player.sendMessage("§7You are not currently flying.");
+        return true;
+    }
+
+    /**
+     * Handle the admin subcommand tree for {@code /fly time ...}.
+     */
+    private boolean handleTimeSubcommand(CommandSender sender, String[] args) {
+        // /fly time add <player> <seconds>
+        if (args.length == 4 && args[1].equalsIgnoreCase("add")) {
+            if (!sender.hasPermission("essential.fly.add")) {
+                sender.sendMessage("§cYou don't have permission to use this command.");
+                return true;
+            }
+
+            String targetName = args[2];
+            Player target = Bukkit.getPlayerExact(targetName);
+            if (target == null || !target.isOnline()) {
+                sender.sendMessage("§cPlayer '" + targetName + "' is not online.");
+                return true;
+            }
+
+            int addSeconds;
+            try {
+                addSeconds = Integer.parseInt(args[3]);
+            } catch (NumberFormatException ex) {
+                sender.sendMessage("§cInvalid number for seconds: '" + args[3] + "'.");
+                return true;
+            }
+
+            if (addSeconds <= 0) {
+                sender.sendMessage("§cSeconds must be a positive integer.");
+                return true;
+            }
+
+            // Ensure row exists, then add time
+            flyDB.ensurePlayerRow(target.getUniqueId());
+            int current = Math.max(0, flyDB.getDuration(target.getUniqueId()));
+            int updated = current + addSeconds;
+            flyDB.setDuration(target.getUniqueId(), updated);
+
+            sender.sendMessage("§aAdded §e" + addSeconds + "s §ato §b" + target.getName() + "§a. New remaining: §e" + updated + "§as.");
+            target.sendMessage("§aYou received §e" + addSeconds + "s §aof flight time. Remaining: §e" + updated + "§as.");
+
+            return true;
+        }
+
+        // Usage help for /fly time
+        sender.sendMessage("§7Usage: §f/fly time add <player> <seconds>");
         return true;
     }
 }
