@@ -16,7 +16,8 @@ import java.util.UUID;
  * Listener that:
  * <ul>
  *   <li>Ensures a default Fly DB record (duration 0) is present when a player joins.</li>
- *   <li>Disables flight and cancels that player's task on quit/kick to prevent offline decrement.</li>
+ *   <li>On quit/kick, disables flight, cancels that player's task, and
+ *       <b>subtracts partial elapsed time</b> since the last tick using {@code lastTickMillis}.</li>
  * </ul>
  */
 public class FlyListener implements Listener {
@@ -72,9 +73,16 @@ public class FlyListener implements Listener {
         deactivate(e.getPlayer());
     }
 
+    /**
+     * Deactivates flight for the given player, cancels their task, and subtracts
+     * the partial elapsed time using the last recorded tick timestamp. Also sends
+     * the remaining time message to the player.
+     *
+     * @param p the player being deactivated
+     */
     private void deactivate(Player p) {
         UUID uuid = p.getUniqueId();
-        // Disable flight and cancel that player's task
-        flyDuration.deactivate(uuid, true);
+        // Disable flight and cancel that player's task; count partial elapsed time and inform player
+        flyDuration.deactivate(uuid, true, true);
     }
 }
