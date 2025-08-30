@@ -11,9 +11,11 @@ import org.bukkit.entity.Player;
  * Handles the {@code /fly} command.
  * <p>
  * Toggle behavior:
- * - If turning ON: player gets flight enabled and a per-player 30s task starts (unless duration is 0 = unlimited,
- *   which still starts the task but never decrements).
- * - If turning OFF: flight is disabled and the player's task is cancelled.
+ * <ul>
+ *   <li><b>ON</b>: Requires player to have {@code fly_duration > 0}. If the duration is {@code 0}, activation is denied.</li>
+ *   <li><b>OFF</b>: Disables flight and cancels the player's per-player task immediately.</li>
+ * </ul>
+ * Note: This implementation treats {@code 0} as <b>no remaining time</b> (not unlimited).
  */
 public class FlyCommand {
 
@@ -58,13 +60,16 @@ public class FlyCommand {
         boolean isActive = flyDuration.isActive(player.getUniqueId());
 
         if (forceOn || (!forceOff && !isActive)) {
-            flyDuration.activate(player);
+            // Prevent activation when player has no remaining time (0 means no time)
             int duration = flyDB.getDuration(player.getUniqueId());
-            if (duration == 0) {
-                player.sendMessage("§aFlight enabled. §7(∞ duration)");
-            } else {
-                player.sendMessage("§aFlight enabled. §7Remaining: §e" + duration + "§7s");
+            if (duration <= 0) {
+                player.sendMessage("§cYou have no flight time remaining.");
+                return true;
             }
+
+            // Activate and report remaining time
+            flyDuration.activate(player);
+            player.sendMessage("§aFlight enabled. §7Remaining: §e" + duration + "§7s");
             return true;
         }
 
