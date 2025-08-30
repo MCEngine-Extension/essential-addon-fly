@@ -16,6 +16,7 @@ import org.bukkit.entity.Player;
  *   <li><b>/fly</b> or <b>/fly on</b> — enable flight if {@code fly_duration > 0}; prevents duplicate activation when already flying.</li>
  *   <li><b>/fly off</b> — disable flight and subtract the partial elapsed time since last tick from DB; shows formatted remaining time.</li>
  *   <li><b>/fly time add &lt;player&gt; &lt;seconds&gt;</b> — admin add time (delegated to {@link CommandUtil}).</li>
+ *   <li><b>/fly get time</b> — show your own remaining flight time in Y/H/M/S format.</li>
  * </ul>
  * <p>
  * Notes:
@@ -56,6 +57,18 @@ public class FlyCommand {
         // Admin subcommands are delegated to CommandUtil
         if (args.length >= 1 && args[0].equalsIgnoreCase("time")) {
             return CommandUtil.handleTimeSubcommand(sender, args, flyDB);
+        }
+
+        // /fly get time
+        if (args.length == 2 && args[0].equalsIgnoreCase("get") && args[1].equalsIgnoreCase("time")) {
+            if (!(sender instanceof Player self)) {
+                sender.sendMessage("Only players can query their own flight time.");
+                return true;
+            }
+            flyDB.ensurePlayerRow(self.getUniqueId());
+            int seconds = Math.max(0, flyDB.getDuration(self.getUniqueId()));
+            self.sendMessage("§7Your remaining flight time: §e" + FlyDuration.formatDuration(seconds) + "§7.");
+            return true;
         }
 
         if (!(sender instanceof Player player)) {

@@ -16,7 +16,8 @@ import java.util.List;
  * <p>
  * Supports:
  * <ul>
- *   <li>{@code /fly} → {@code on}, {@code off}, {@code time} (if permitted)</li>
+ *   <li>{@code /fly} → {@code on}, {@code off}, {@code get}, {@code time} (if permitted)</li>
+ *   <li>{@code /fly get} → {@code time}</li>
  *   <li>{@code /fly time} → {@code add} (if permitted)</li>
  *   <li>{@code /fly time add <player> <seconds>} → online player names and common second values</li>
  * </ul>
@@ -37,9 +38,14 @@ public class FlyTabCompleter implements TabCompleter {
         final boolean canAdmin = sender.hasPermission("essential.fly.add");
 
         if (args.length == 1) {
-            List<String> base = new ArrayList<>(Arrays.asList("on", "off"));
+            List<String> base = new ArrayList<>(Arrays.asList("on", "off", "get"));
             if (canAdmin) base.add("time");
             return prefixFilter(base, args[0]);
+        }
+
+        // /fly get ...
+        if (args.length == 2 && args[0].equalsIgnoreCase("get")) {
+            return prefixFilter(Collections.singletonList("time"), args[1]);
         }
 
         // /fly time ...
