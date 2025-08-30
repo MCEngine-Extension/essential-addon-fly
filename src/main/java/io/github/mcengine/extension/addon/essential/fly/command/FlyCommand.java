@@ -2,6 +2,7 @@ package io.github.mcengine.extension.addon.essential.fly.command;
 
 import io.github.mcengine.api.core.extension.logger.MCEngineExtensionLogger;
 import io.github.mcengine.extension.addon.essential.fly.database.FlyDB;
+import io.github.mcengine.extension.addon.essential.fly.util.CommandUtil;
 import io.github.mcengine.extension.addon.essential.fly.util.FlyDuration;
 import org.bukkit.command.Command;
 import org.bukkit.command.CommandSender;
@@ -13,8 +14,8 @@ import org.bukkit.entity.Player;
  * Supported syntax:
  * <ul>
  *   <li><b>/fly</b> or <b>/fly on</b> — enable flight if {@code fly_duration > 0}; prevents duplicate activation when already flying.</li>
- *   <li><b>/fly off</b> — disable flight and subtract the partial elapsed time since last tick from DB.</li>
- *   <li><b>/fly time add &lt;player&gt; &lt;seconds&gt;</b> — admin add time (handled elsewhere in this class).</li>
+ *   <li><b>/fly off</b> — disable flight and subtract the partial elapsed time since last tick from DB; shows formatted remaining time.</li>
+ *   <li><b>/fly time add &lt;player&gt; &lt;seconds&gt;</b> — admin add time (delegated to {@link CommandUtil}).</li>
  * </ul>
  * <p>
  * Notes:
@@ -52,9 +53,9 @@ public class FlyCommand {
      * @return true if handled.
      */
     public boolean onCommand(CommandSender sender, Command cmd, String label, String[] args) {
-        // Admin subcommand: /fly time add <player> <seconds>
+        // Admin subcommands are delegated to CommandUtil
         if (args.length >= 1 && args[0].equalsIgnoreCase("time")) {
-            return handleTimeSubcommand(sender, args);
+            return CommandUtil.handleTimeSubcommand(sender, args, flyDB);
         }
 
         if (!(sender instanceof Player player)) {
@@ -98,61 +99,5 @@ public class FlyCommand {
 
         player.sendMessage("§7You are not currently flying.");
         return true;
-    }
-
-    /**
-     * Handle the admin subcommand tree for {@code /fly time ...}.
-     */
-    private boolean handleTimeSubcommand(CommandSender sender, String[] args) {
-        // Only the "add" path is implemented here:
-        // /fly time add <player> <seconds>
-        if (args.length == 4 && args[1].equalsIgnoreCase("add")) {
-            return FlyCommandTimeAdd.handle(sender, flyDB, args[2], args[3]);
-        }
-
-        // Usage help for /fly time
-        sender.sendMessage("§7Usage: §f/fly time add <player> <seconds>");
-        return true;
-    }
-
-    /**
-     * Small helper to keep the time add logic tidy.
-     */
-    private static final class FlyCommandTimeAdd {
-        private static boolean handle(CommandSender sender, FlyDB flyDB, String playerName, String secondsStr) {
-            if (!sender.hasPermission("essential.fly.add")) {
-                sender.sendMessage("§cYou don't have permission to use this command.");
-                return true;
-            }
-
-            Player target = org.bukkit.Bukkit.getPlayerExact(playerName);
-            if (target == null || !target.isOnline()) {
-                sender.sendMessage("§cPlayer '" + playerName + "' is not online.");
-                return true;
-            }
-
-            final int addSeconds;
-            try {
-                addSeconds = Integer.parseInt(secondsStr);
-            } catch (NumberFormatException ex) {
-                sender.sendMessage("§cInvalid number for seconds: '" + secondsStr + "'.");
-                return true;
-            }
-
-            if (addSeconds <= 0) {
-                sender.sendMessage("§cSeconds must be a positive integer.");
-                return true;
-            }
-
-            flyDB.ensurePlayerRow(target.getUniqueId());
-            int current = Math.max(0, flyDB.getDuration(target.getUniqueId()));
-            int updated = current + addSeconds;
-            flyDB.setDuration(target.getUniqueId(), updated);
-
-            String formatted = FlyDuration.formatDuration(updated);
-            sender.sendMessage("§aAdded §e" + addSeconds + "s §ato §b" + target.getName() + "§a. New remaining: §e" + formatted + "§a.");
-            target.sendMessage("§aYou received §e" + addSeconds + "s §aof flight time. Remaining: §e" + formatted + "§a.");
-            return true;
-        }
     }
 }
