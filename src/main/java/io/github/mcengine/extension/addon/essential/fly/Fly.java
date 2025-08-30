@@ -12,6 +12,7 @@ import io.github.mcengine.extension.addon.essential.fly.database.sqlite.FlyDBSQL
 import io.github.mcengine.extension.addon.essential.fly.listener.FlyListener;
 import io.github.mcengine.extension.addon.essential.fly.util.ConfigUtil;
 import io.github.mcengine.extension.addon.essential.fly.util.FlyDuration;
+import io.github.mcengine.extension.addon.essential.fly.tabcompleter.FlyTabCompleter;
 import org.bukkit.Bukkit;
 import org.bukkit.command.Command;
 import org.bukkit.command.CommandMap;
@@ -89,7 +90,7 @@ public class Fly implements IMCEngineEssentialAddOn {
             // Init per-player flight manager
             flyDuration = new FlyDuration(plugin, logger, flyDB);
 
-            // Register listeners (now also ensures DB row on join)
+            // Register listeners (ensures DB row on join; cancels per-player task on leave)
             PluginManager pm = Bukkit.getPluginManager();
             pm.registerEvents(new FlyListener(logger, flyDB, flyDuration), plugin);
 
@@ -98,10 +99,14 @@ public class Fly implements IMCEngineEssentialAddOn {
             commandMapField.setAccessible(true);
             CommandMap commandMap = (CommandMap) commandMapField.get(Bukkit.getServer());
 
+            // Define the /fly command
             Command flyCmd = new Command("fly") {
 
                 /** Handles command execution for {@code /fly}. */
                 private final FlyCommand handler = new FlyCommand(logger, flyDB, flyDuration);
+
+                /** Handles tab-completion for {@code /fly}. */
+                private final FlyTabCompleter completer = new FlyTabCompleter();
 
                 @Override
                 public boolean execute(CommandSender sender, String label, String[] args) {
@@ -110,12 +115,14 @@ public class Fly implements IMCEngineEssentialAddOn {
 
                 @Override
                 public List<String> tabComplete(CommandSender sender, String alias, String[] args) {
-                    if (args.length == 1) return Arrays.asList("on", "off");
-                    return Collections.emptyList();
+                    return completer.onTabComplete(sender, this, alias, args);
                 }
             };
+
             flyCmd.setDescription("Toggle flight mode (duration decreases every 30s when active; 0 = no time).");
-            flyCmd.setUsage("/fly [on|off]");
+            flyCmd.setUsage("/fly [on|off] | /fly time add <player> <seconds>");
+
+            // Dynamically register the /fly command
             commandMap.register(plugin.getName().toLowerCase(), flyCmd);
 
             logger.info("Enabled successfully.");
