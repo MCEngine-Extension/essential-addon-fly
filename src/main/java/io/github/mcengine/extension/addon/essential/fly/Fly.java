@@ -89,9 +89,9 @@ public class Fly implements IMCEngineEssentialAddOn {
             // Init per-player flight manager
             flyDuration = new FlyDuration(plugin, logger, flyDB);
 
-            // Register listeners
+            // Register listeners (now also ensures DB row on join)
             PluginManager pm = Bukkit.getPluginManager();
-            pm.registerEvents(new FlyListener(logger, flyDuration), plugin);
+            pm.registerEvents(new FlyListener(logger, flyDB, flyDuration), plugin);
 
             // Reflectively register /fly command
             Field commandMapField = Bukkit.getServer().getClass().getDeclaredField("commandMap");
@@ -114,7 +114,7 @@ public class Fly implements IMCEngineEssentialAddOn {
                     return Collections.emptyList();
                 }
             };
-            flyCmd.setDescription("Toggle flight mode (duration decreases every 30s when active; 0 = unlimited).");
+            flyCmd.setDescription("Toggle flight mode (duration decreases every 30s when active; 0 = no time).");
             flyCmd.setUsage("/fly [on|off]");
             commandMap.register(plugin.getName().toLowerCase(), flyCmd);
 
