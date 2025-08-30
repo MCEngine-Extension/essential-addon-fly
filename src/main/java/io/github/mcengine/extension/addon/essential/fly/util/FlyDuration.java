@@ -15,7 +15,14 @@ import java.util.concurrent.ConcurrentHashMap;
 /**
  * Manages per-player flight state and spawns an individual 30-second repeating task per active player.
  * <p>
- * Convention: a duration of {@code 0} means unlimited and is never decremented.
+ * Convention: a duration of {@code 0} means no remaining time and activation is denied.
+ * <p>
+ * Enhancements:
+ * <ul>
+ *   <li>Prevents duplicate activation by ignoring re-activation attempts at the scheduler layer.</li>
+ *   <li>On self-deactivation, subtracts the partial elapsed time since the last 30s tick and informs the player.</li>
+ *   <li>Whenever time is reduced (each 30s tick or partial on self-deactivate), sends remaining time formatted as year/hour/minute/second.</li>
+ * </ul>
  */
 public class FlyDuration {
 
@@ -40,6 +47,13 @@ public class FlyDuration {
      * Presence in this map means the player is considered "active" for flight.
      */
     private final Map<UUID, BukkitTask> tasksByPlayer = new ConcurrentHashMap<>();
+
+    /**
+     * Map of player UUIDs to the last time (in millis) we accounted for duration.
+     * <p>
+     * Updated on activation, every 30s tick, and used to compute partial elapsed seconds on self-deactivation.
+     */
+    private final Map<UUID, Long> lastTickMillis = new ConcurrentHashMap<>();
 
     /**
      * Construct a new {@link FlyDuration} manager.
@@ -76,6 +90,9 @@ public class FlyDuration {
         // If already active, don't double-schedule
         if (tasksByPlayer.containsKey(uuid)) return;
 
+        // Record "now" as the last accounted moment
+        lastTickMillis.put(uuid, System.currentTimeMillis());
+
         // Schedule a per-player repeating task (every 30s)
         BukkitTask task = new BukkitRunnable() {
             @Override
@@ -84,25 +101,37 @@ public class FlyDuration {
                     Player p = Bukkit.getPlayer(uuid);
                     if (p == null || !p.isOnline()) {
                         // Player went offline: cancel their task and ensure no decrement happens offline
-                        deactivate(uuid, false);
+                        deactivate(uuid, false, false);
                         return;
                     }
 
                     int current = flyDB.getDuration(uuid);
-                    if (current == 0) {
-                        // Unlimited: keep them flying; no decrement
-                        return;
-                    }
-
-                    int remaining = flyDB.decrementDuration(uuid, 30);
-                    if (remaining <= 0) {
-                        // Expired: disable flight and stop this task
+                    if (current <= 0) {
+                        // Nothing left; ensure disabled and stop
                         try {
                             p.setAllowFlight(false);
                             p.setFlying(false);
                         } catch (Throwable ignore) {}
                         p.sendMessage("§cYour flight time has expired.");
-                        deactivate(uuid, false);
+                        deactivate(uuid, false, false);
+                        return;
+                    }
+
+                    // Regular 30-second decrement
+                    int remaining = flyDB.decrementDuration(uuid, 30);
+                    // Update last accounted time to now (align to this run)
+                    lastTickMillis.put(uuid, System.currentTimeMillis());
+
+                    // Inform player of remaining time in formatted units
+                    if (remaining > 0) {
+                        p.sendMessage("§7Remaining: §e" + formatDuration(remaining) + "§7.");
+                    } else {
+                        try {
+                            p.setAllowFlight(false);
+                            p.setFlying(false);
+                        } catch (Throwable ignore) {}
+                        p.sendMessage("§cYour flight time has expired.");
+                        deactivate(uuid, false, false);
                     }
                 } catch (Exception e) {
                     logger.warning("Per-player fly task error for " + uuid + ": " + e.getMessage());
@@ -116,10 +145,21 @@ public class FlyDuration {
     /**
      * Deactivate flight for a player and cancel their individual task.
      *
-     * @param uuid          The player's UUID.
-     * @param disableFlight Whether to actively disable flight flags on the player.
+     * @param uuid           The player's UUID.
+     * @param disableFlight  Whether to actively disable flight flags on the player.
      */
     public void deactivate(UUID uuid, boolean disableFlight) {
+        deactivate(uuid, disableFlight, false);
+    }
+
+    /**
+     * Deactivate flight for a player and cancel their individual task.
+     *
+     * @param uuid           The player's UUID.
+     * @param disableFlight  Whether to actively disable flight flags on the player.
+     * @param countPartial   When true, also subtract the partial elapsed seconds since the last tick.
+     */
+    public void deactivate(UUID uuid, boolean disableFlight, boolean countPartial) {
         // Cancel task if present
         BukkitTask task = tasksByPlayer.remove(uuid);
         if (task != null) {
@@ -127,6 +167,30 @@ public class FlyDuration {
                 task.cancel();
             } catch (Throwable ignore) {}
         }
+
+        // Optionally subtract partial elapsed time since last tick
+        if (countPartial) {
+            Long last = lastTickMillis.get(uuid);
+            if (last != null) {
+                long now = System.currentTimeMillis();
+                long deltaMs = Math.max(0L, now - last);
+                int partialSeconds = (int) Math.floor(deltaMs / 1000.0);
+                if (partialSeconds > 0) {
+                    int remaining = flyDB.decrementDuration(uuid, partialSeconds);
+                    Player p = Bukkit.getPlayer(uuid);
+                    if (p != null) {
+                        if (remaining > 0) {
+                            p.sendMessage("§7Remaining: §e" + formatDuration(remaining) + "§7.");
+                        } else {
+                            p.sendMessage("§cYour flight time has expired.");
+                        }
+                    }
+                }
+            }
+        }
+
+        // Clear lastTick marker
+        lastTickMillis.remove(uuid);
 
         if (disableFlight) {
             Player p = Bukkit.getPlayer(uuid);
@@ -166,5 +230,31 @@ public class FlyDuration {
             }
         }
         tasksByPlayer.clear();
+        lastTickMillis.clear();
+    }
+
+    /**
+     * Format a duration (in seconds) as "Xy Yh Zm Ws".
+     *
+     * @param totalSeconds total seconds remaining.
+     * @return formatted string containing years, hours, minutes, and seconds.
+     */
+    public static String formatDuration(int totalSeconds) {
+        if (totalSeconds < 0) totalSeconds = 0;
+        final int SEC_PER_MIN = 60;
+        final int SEC_PER_HOUR = 60 * SEC_PER_MIN;
+        final int SEC_PER_YEAR = 365 * 24 * SEC_PER_HOUR;
+
+        int years = totalSeconds / SEC_PER_YEAR;
+        int rem = totalSeconds % SEC_PER_YEAR;
+
+        int hours = rem / SEC_PER_HOUR;
+        rem %= SEC_PER_HOUR;
+
+        int minutes = rem / SEC_PER_MIN;
+        int seconds = rem % SEC_PER_MIN;
+
+        return years + "y " + hours + "h " + minutes + "m " + seconds + "s";
+        // Note: Spec requested year/hour/minute/second. Days are folded into hours for simplicity.
     }
 }

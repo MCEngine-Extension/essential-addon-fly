@@ -3,7 +3,6 @@ package io.github.mcengine.extension.addon.essential.fly.command;
 import io.github.mcengine.api.core.extension.logger.MCEngineExtensionLogger;
 import io.github.mcengine.extension.addon.essential.fly.database.FlyDB;
 import io.github.mcengine.extension.addon.essential.fly.util.FlyDuration;
-import org.bukkit.Bukkit;
 import org.bukkit.command.Command;
 import org.bukkit.command.CommandSender;
 import org.bukkit.entity.Player;
@@ -13,10 +12,9 @@ import org.bukkit.entity.Player;
  * <p>
  * Supported syntax:
  * <ul>
- *   <li><b>/fly</b> or <b>/fly on</b> — enable flight if {@code fly_duration > 0}</li>
- *   <li><b>/fly off</b> — disable flight</li>
- *   <li><b>/fly time add &lt;player&gt; &lt;seconds&gt;</b> — add seconds to a player's remaining time
- *       (requires {@code essential.fly.add})</li>
+ *   <li><b>/fly</b> or <b>/fly on</b> — enable flight if {@code fly_duration > 0}; prevents duplicate activation when already flying.</li>
+ *   <li><b>/fly off</b> — disable flight and subtract the partial elapsed time since last tick from DB.</li>
+ *   <li><b>/fly time add &lt;player&gt; &lt;seconds&gt;</b> — admin add time (handled elsewhere in this class).</li>
  * </ul>
  * <p>
  * Notes:
@@ -67,10 +65,15 @@ public class FlyCommand {
         // Ensure the player has a row (no-op if exists)
         flyDB.ensurePlayerRow(player.getUniqueId());
 
-        boolean forceOn = args.length >= 1 && args[0].equalsIgnoreCase("on");
-        boolean forceOff = args.length >= 1 && args[0].equalsIgnoreCase("off");
+        final boolean forceOn = args.length >= 1 && args[0].equalsIgnoreCase("on");
+        final boolean forceOff = args.length >= 1 && args[0].equalsIgnoreCase("off");
+        final boolean isActive = flyDuration.isActive(player.getUniqueId());
 
-        boolean isActive = flyDuration.isActive(player.getUniqueId());
+        // Prevent duplicate explicit activation
+        if (forceOn && isActive) {
+            player.sendMessage("§7You are already flying.");
+            return true;
+        }
 
         if (forceOn || (!forceOff && !isActive)) {
             // Prevent activation when player has no remaining time (0 means no time)
@@ -80,14 +83,15 @@ public class FlyCommand {
                 return true;
             }
 
-            // Activate and report remaining time
+            // Activate and report remaining time with formatted units
             flyDuration.activate(player);
-            player.sendMessage("§aFlight enabled. §7Remaining: §e" + duration + "§7s");
+            player.sendMessage("§aFlight enabled. §7Remaining: §e" + FlyDuration.formatDuration(duration) + "§7.");
             return true;
         }
 
         if (forceOff || isActive) {
-            flyDuration.deactivate(player.getUniqueId(), true);
+            // Self-deactivation: also subtract the partial elapsed time since last tick and tell remaining
+            flyDuration.deactivate(player.getUniqueId(), true, true);
             player.sendMessage("§cFlight disabled.");
             return true;
         }
@@ -100,25 +104,38 @@ public class FlyCommand {
      * Handle the admin subcommand tree for {@code /fly time ...}.
      */
     private boolean handleTimeSubcommand(CommandSender sender, String[] args) {
+        // Only the "add" path is implemented here:
         // /fly time add <player> <seconds>
         if (args.length == 4 && args[1].equalsIgnoreCase("add")) {
+            return FlyCommandTimeAdd.handle(sender, flyDB, args[2], args[3]);
+        }
+
+        // Usage help for /fly time
+        sender.sendMessage("§7Usage: §f/fly time add <player> <seconds>");
+        return true;
+    }
+
+    /**
+     * Small helper to keep the time add logic tidy.
+     */
+    private static final class FlyCommandTimeAdd {
+        private static boolean handle(CommandSender sender, FlyDB flyDB, String playerName, String secondsStr) {
             if (!sender.hasPermission("essential.fly.add")) {
                 sender.sendMessage("§cYou don't have permission to use this command.");
                 return true;
             }
 
-            String targetName = args[2];
-            Player target = Bukkit.getPlayerExact(targetName);
+            Player target = org.bukkit.Bukkit.getPlayerExact(playerName);
             if (target == null || !target.isOnline()) {
-                sender.sendMessage("§cPlayer '" + targetName + "' is not online.");
+                sender.sendMessage("§cPlayer '" + playerName + "' is not online.");
                 return true;
             }
 
-            int addSeconds;
+            final int addSeconds;
             try {
-                addSeconds = Integer.parseInt(args[3]);
+                addSeconds = Integer.parseInt(secondsStr);
             } catch (NumberFormatException ex) {
-                sender.sendMessage("§cInvalid number for seconds: '" + args[3] + "'.");
+                sender.sendMessage("§cInvalid number for seconds: '" + secondsStr + "'.");
                 return true;
             }
 
@@ -127,20 +144,15 @@ public class FlyCommand {
                 return true;
             }
 
-            // Ensure row exists, then add time
             flyDB.ensurePlayerRow(target.getUniqueId());
             int current = Math.max(0, flyDB.getDuration(target.getUniqueId()));
             int updated = current + addSeconds;
             flyDB.setDuration(target.getUniqueId(), updated);
 
-            sender.sendMessage("§aAdded §e" + addSeconds + "s §ato §b" + target.getName() + "§a. New remaining: §e" + updated + "§as.");
-            target.sendMessage("§aYou received §e" + addSeconds + "s §aof flight time. Remaining: §e" + updated + "§as.");
-
+            String formatted = FlyDuration.formatDuration(updated);
+            sender.sendMessage("§aAdded §e" + addSeconds + "s §ato §b" + target.getName() + "§a. New remaining: §e" + formatted + "§a.");
+            target.sendMessage("§aYou received §e" + addSeconds + "s §aof flight time. Remaining: §e" + formatted + "§a.");
             return true;
         }
-
-        // Usage help for /fly time
-        sender.sendMessage("§7Usage: §f/fly time add <player> <seconds>");
-        return true;
     }
 }
