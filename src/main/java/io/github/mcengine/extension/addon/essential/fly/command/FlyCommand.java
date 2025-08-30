@@ -106,7 +106,6 @@ public class FlyCommand {
         if (forceOff || isActive) {
             // Self-deactivation: also subtract the partial elapsed time since last tick and tell remaining
             flyDuration.deactivate(player.getUniqueId(), true, true);
-            player.sendMessage("§cFlight disabled.");
             return true;
         }
 
