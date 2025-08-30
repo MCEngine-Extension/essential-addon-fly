@@ -125,7 +125,7 @@ public class FlyDuration {
 
                     // Inform player of remaining time in formatted units
                     if (remaining > 0) {
-                        p.sendMessage("§7Remaining: §e" + formatDuration(remaining) + "§7.");
+                        p.sendMessage("§cFlight disabled. §7Remaining: §e" + formatDuration(remaining) + "§7.");
                     } else {
                         try {
                             p.setAllowFlight(false);
