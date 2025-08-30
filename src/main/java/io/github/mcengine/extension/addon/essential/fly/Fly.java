@@ -28,8 +28,9 @@ import java.util.List;
 /**
  * Main class for the Fly extension.
  * <p>
- * Delegates config management to {@link ConfigUtil} and flight/ticker management
- * to {@link FlyDuration}. Registers the {@code /fly} command and listeners.
+ * Delegates config management to {@link io.github.mcengine.extension.addon.essential.fly.util.ConfigUtil}
+ * and per-player flight scheduling to {@link io.github.mcengine.extension.addon.essential.fly.util.FlyDuration}.
+ * Registers the {@code /fly} command and listeners.
  */
 public class Fly implements IMCEngineEssentialAddOn {
 
@@ -52,8 +53,7 @@ public class Fly implements IMCEngineEssentialAddOn {
     private final String folderPath = "extensions/addons/configs/MCEngineFly";
 
     /**
-     * Flight/ticker manager that tracks multiple players
-     * and decrements their durations every 30 seconds.
+     * Per-player flight/timer manager.
      */
     private FlyDuration flyDuration;
 
@@ -86,13 +86,12 @@ public class Fly implements IMCEngineEssentialAddOn {
             // Ensure schema
             flyDB.ensureSchema();
 
-            // Init flight manager (supports multiple players) and start 30s ticker
+            // Init per-player flight manager
             flyDuration = new FlyDuration(plugin, logger, flyDB);
-            flyDuration.startTicker();
 
             // Register listeners
             PluginManager pm = Bukkit.getPluginManager();
-            pm.registerEvents(new FlyListener(logger, flyDB, flyDuration.getActiveFlyers()), plugin);
+            pm.registerEvents(new FlyListener(logger, flyDuration), plugin);
 
             // Reflectively register /fly command
             Field commandMapField = Bukkit.getServer().getClass().getDeclaredField("commandMap");
@@ -102,7 +101,7 @@ public class Fly implements IMCEngineEssentialAddOn {
             Command flyCmd = new Command("fly") {
 
                 /** Handles command execution for {@code /fly}. */
-                private final FlyCommand handler = new FlyCommand(logger, flyDB, flyDuration.getActiveFlyers());
+                private final FlyCommand handler = new FlyCommand(logger, flyDB, flyDuration);
 
                 @Override
                 public boolean execute(CommandSender sender, String label, String[] args) {
@@ -128,9 +127,9 @@ public class Fly implements IMCEngineEssentialAddOn {
 
     @Override
     public void onDisload(Plugin plugin) {
-        // Stop ticker and clean up players
+        // Stop all per-player tasks and disable flight
         if (flyDuration != null) {
-            flyDuration.stopTickerAndDisableAll();
+            flyDuration.stopAll();
         }
     }
 
