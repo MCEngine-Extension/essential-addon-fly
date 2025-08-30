@@ -17,11 +17,12 @@ import java.util.concurrent.ConcurrentHashMap;
  * <p>
  * Convention: a duration of {@code 0} means no remaining time and activation is denied.
  * <p>
- * Enhancements:
+ * Behavior:
  * <ul>
  *   <li>Prevents duplicate activation by ignoring re-activation attempts at the scheduler layer.</li>
  *   <li>On self-deactivation, subtracts the partial elapsed time since the last 30s tick and informs the player.</li>
  *   <li>Whenever time is reduced (each 30s tick or partial on self-deactivate), sends remaining time formatted as year/hour/minute/second.</li>
+ *   <li><b>FIX</b>: Always sends the remaining time message on self-deactivation, even if no partial seconds passed since the last tick.</li>
  * </ul>
  */
 public class FlyDuration {
@@ -145,8 +146,8 @@ public class FlyDuration {
     /**
      * Deactivate flight for a player and cancel their individual task.
      *
-     * @param uuid           The player's UUID.
-     * @param disableFlight  Whether to actively disable flight flags on the player.
+     * @param uuid          The player's UUID.
+     * @param disableFlight Whether to actively disable flight flags on the player.
      */
     public void deactivate(UUID uuid, boolean disableFlight) {
         deactivate(uuid, disableFlight, false);
@@ -155,9 +156,10 @@ public class FlyDuration {
     /**
      * Deactivate flight for a player and cancel their individual task.
      *
-     * @param uuid           The player's UUID.
-     * @param disableFlight  Whether to actively disable flight flags on the player.
-     * @param countPartial   When true, also subtract the partial elapsed seconds since the last tick.
+     * @param uuid          The player's UUID.
+     * @param disableFlight Whether to actively disable flight flags on the player.
+     * @param countPartial  When true, also subtract the partial elapsed seconds since the last tick and
+     *                      <b>always</b> inform the player of the remaining time (even if partial is 0).
      */
     public void deactivate(UUID uuid, boolean disableFlight, boolean countPartial) {
         // Cancel task if present
@@ -168,6 +170,9 @@ public class FlyDuration {
             } catch (Throwable ignore) {}
         }
 
+        boolean informed = false;
+        int remainingAfter = -1;
+
         // Optionally subtract partial elapsed time since last tick
         if (countPartial) {
             Long last = lastTickMillis.get(uuid);
@@ -175,16 +180,33 @@ public class FlyDuration {
                 long now = System.currentTimeMillis();
                 long deltaMs = Math.max(0L, now - last);
                 int partialSeconds = (int) Math.floor(deltaMs / 1000.0);
+
                 if (partialSeconds > 0) {
-                    int remaining = flyDB.decrementDuration(uuid, partialSeconds);
+                    remainingAfter = flyDB.decrementDuration(uuid, partialSeconds);
                     Player p = Bukkit.getPlayer(uuid);
                     if (p != null) {
-                        if (remaining > 0) {
-                            p.sendMessage("§7Remaining: §e" + formatDuration(remaining) + "§7.");
+                        if (remainingAfter > 0) {
+                            p.sendMessage("§7Remaining: §e" + formatDuration(remainingAfter) + "§7.");
                         } else {
                             p.sendMessage("§cYour flight time has expired.");
                         }
+                        informed = true;
                     }
+                }
+            }
+        }
+
+        // If we didn't inform yet (e.g., partialSeconds == 0), still send remaining time on self-deactivate
+        if (countPartial && !informed) {
+            Player p = Bukkit.getPlayer(uuid);
+            if (p != null) {
+                if (remainingAfter < 0) {
+                    remainingAfter = Math.max(0, flyDB.getDuration(uuid));
+                }
+                if (remainingAfter > 0) {
+                    p.sendMessage("§7Remaining: §e" + formatDuration(remainingAfter) + "§7.");
+                } else {
+                    p.sendMessage("§cYour flight time has expired.");
                 }
             }
         }
