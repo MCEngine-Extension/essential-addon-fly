@@ -125,7 +125,7 @@ public class FlyDuration {
 
                     // Inform player of remaining time in formatted units
                     if (remaining > 0) {
-                        p.sendMessage("§7Remaining: §e" + formatDuration(remaining) + "§7.");
+                        p.sendMessage("§7Flight Remaining: §e" + formatDuration(remaining) + "§7.");
                     } else {
                         try {
                             p.setAllowFlight(false);
@@ -204,7 +204,7 @@ public class FlyDuration {
                     remainingAfter = Math.max(0, flyDB.getDuration(uuid));
                 }
                 if (remainingAfter > 0) {
-                    p.sendMessage("§7Remaining: §e" + formatDuration(remainingAfter) + "§7.");
+                    p.sendMessage("§cFlight disabled. §7Remaining: §e" + formatDuration(remainingAfter) + "§7.");
                 } else {
                     p.sendMessage("§cYour flight time has expired.");
                 }
