@@ -21,7 +21,7 @@ import java.util.concurrent.ConcurrentHashMap;
  * <ul>
  *   <li>Prevents duplicate activation by ignoring re-activation attempts at the scheduler layer.</li>
  *   <li>On self-deactivation, subtracts the partial elapsed time since the last 30s tick and informs the player.</li>
- *   <li>Whenever time is reduced (each 30s tick or partial on self-deactivate), sends remaining time formatted as year/hour/minute/second.</li>
+ *   <li>Whenever time is reduced (each 30s tick or partial on self-deactivate), sends remaining time formatted as year/day/hour/minute/second.</li>
  *   <li><b>FIX</b>: Always sends the remaining time message on self-deactivation, even if no partial seconds passed since the last tick.</li>
  * </ul>
  */
@@ -55,6 +55,26 @@ public class FlyDuration {
      * Updated on activation, every 30s tick, and used to compute partial elapsed seconds on self-deactivation.
      */
     private final Map<UUID, Long> lastTickMillis = new ConcurrentHashMap<>();
+
+    /**
+     * Seconds per minute unit constant.
+     */
+    private static final int SEC_PER_MIN = 60;
+
+    /**
+     * Seconds per hour unit constant.
+     */
+    private static final int SEC_PER_HOUR = 60 * SEC_PER_MIN;
+
+    /**
+     * Seconds per day unit constant (24 hours).
+     */
+    private static final int SEC_PER_DAY = 24 * SEC_PER_HOUR;
+
+    /**
+     * Seconds per year unit constant (365 days).
+     */
+    private static final int SEC_PER_YEAR = 365 * SEC_PER_DAY;
 
     /**
      * Construct a new {@link FlyDuration} manager.
@@ -256,19 +276,19 @@ public class FlyDuration {
     }
 
     /**
-     * Format a duration (in seconds) as "Xy Yh Zm Ws".
+     * Format a duration (in seconds) as "Xy Yd Zh Am Bs".
      *
      * @param totalSeconds total seconds remaining.
-     * @return formatted string containing years, hours, minutes, and seconds.
+     * @return formatted string containing years, days, hours, minutes, and seconds.
      */
     public static String formatDuration(int totalSeconds) {
         if (totalSeconds < 0) totalSeconds = 0;
-        final int SEC_PER_MIN = 60;
-        final int SEC_PER_HOUR = 60 * SEC_PER_MIN;
-        final int SEC_PER_YEAR = 365 * 24 * SEC_PER_HOUR;
 
         int years = totalSeconds / SEC_PER_YEAR;
         int rem = totalSeconds % SEC_PER_YEAR;
+
+        int days = rem / SEC_PER_DAY;
+        rem %= SEC_PER_DAY;
 
         int hours = rem / SEC_PER_HOUR;
         rem %= SEC_PER_HOUR;
@@ -276,7 +296,6 @@ public class FlyDuration {
         int minutes = rem / SEC_PER_MIN;
         int seconds = rem % SEC_PER_MIN;
 
-        return years + "y " + hours + "h " + minutes + "m " + seconds + "s";
-        // Note: Spec requested year/hour/minute/second. Days are folded into hours for simplicity.
+        return years + "y " + days + "d " + hours + "h " + minutes + "m " + seconds + "s";
     }
 }
