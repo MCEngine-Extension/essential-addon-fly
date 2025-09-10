@@ -1,11 +1,9 @@
 package io.github.mcengine.extension.addon.essential.fly.database.postgresql;
 
 import io.github.mcengine.api.core.extension.logger.MCEngineExtensionLogger;
+import io.github.mcengine.common.essential.MCEngineEssentialCommon;
 import io.github.mcengine.extension.addon.essential.fly.database.FlyDB;
 
-import java.sql.Connection;
-import java.sql.PreparedStatement;
-import java.sql.ResultSet;
 import java.util.UUID;
 
 /**
@@ -13,19 +11,27 @@ import java.util.UUID;
  */
 public class FlyDBPostgreSQL implements FlyDB {
 
-    /**
-     * Shared SQL connection provided by MCEngine.
-     */
-    private final Connection conn;
-
-    /**
-     * Logger for DB diagnostics.
-     */
+    /** Logger for DB diagnostics. */
     private final MCEngineExtensionLogger logger;
 
-    public FlyDBPostgreSQL(Connection conn, MCEngineExtensionLogger logger) {
-        this.conn = conn;
+    /**
+     * Constructs the DB helper.
+     *
+     * @param logger Logger instance for diagnostics.
+     */
+    public FlyDBPostgreSQL(MCEngineExtensionLogger logger) {
         this.logger = logger;
+    }
+
+    /** Convenience: resolve Essential DB facade. */
+    private static MCEngineEssentialCommon db() {
+        return MCEngineEssentialCommon.getApi();
+    }
+
+    /** Quote/escape a value for inline SQL (used for simple statements). */
+    private static String q(String s) {
+        if (s == null) return "NULL";
+        return "'" + s.replace("'", "''") + "'";
     }
 
     @Override
@@ -37,8 +43,8 @@ public class FlyDBPostgreSQL implements FlyDB {
               fly_duration INT NOT NULL DEFAULT 0
             );
             """;
-        try (PreparedStatement ps = conn.prepareStatement(sql)) {
-            ps.executeUpdate();
+        try {
+            db().executeQuery(sql);
         } catch (Exception e) {
             logger.warning("PostgreSQL ensureSchema error: " + e.getMessage());
         }
@@ -46,14 +52,10 @@ public class FlyDBPostgreSQL implements FlyDB {
 
     @Override
     public void ensurePlayerRow(UUID uuid) {
-        String sql = """
-            INSERT INTO fly (player_uuid, fly_duration)
-            VALUES (?, 0)
-            ON CONFLICT (player_uuid) DO NOTHING;
-            """;
-        try (PreparedStatement ps = conn.prepareStatement(sql)) {
-            ps.setString(1, uuid.toString());
-            ps.executeUpdate();
+        String sql = "INSERT INTO fly (player_uuid, fly_duration) VALUES (" +
+            q(uuid.toString()) + ", 0) ON CONFLICT (player_uuid) DO NOTHING";
+        try {
+            db().executeQuery(sql);
         } catch (Exception e) {
             logger.warning("PostgreSQL ensurePlayerRow error: " + e.getMessage());
         }
@@ -61,29 +63,23 @@ public class FlyDBPostgreSQL implements FlyDB {
 
     @Override
     public int getDuration(UUID uuid) {
-        String sql = "SELECT fly_duration FROM fly WHERE player_uuid = ?";
-        try (PreparedStatement ps = conn.prepareStatement(sql)) {
-            ps.setString(1, uuid.toString());
-            try (ResultSet rs = ps.executeQuery()) {
-                if (rs.next()) return rs.getInt(1);
-            }
+        String sql = "SELECT fly_duration FROM fly WHERE player_uuid = " + q(uuid.toString());
+        try {
+            Integer v = db().getValue(sql, Integer.class);
+            return v != null ? v : 0;
         } catch (Exception e) {
             logger.warning("PostgreSQL getDuration error: " + e.getMessage());
+            return 0;
         }
-        return 0;
     }
 
     @Override
     public void setDuration(UUID uuid, int seconds) {
-        String sql = """
-            INSERT INTO fly (player_uuid, fly_duration)
-            VALUES (?, ?)
-            ON CONFLICT (player_uuid) DO UPDATE SET fly_duration = EXCLUDED.fly_duration;
-            """;
-        try (PreparedStatement ps = conn.prepareStatement(sql)) {
-            ps.setString(1, uuid.toString());
-            ps.setInt(2, seconds);
-            ps.executeUpdate();
+        String sql = "INSERT INTO fly (player_uuid, fly_duration) VALUES (" +
+            q(uuid.toString()) + ", " + seconds + ") " +
+            "ON CONFLICT (player_uuid) DO UPDATE SET fly_duration = EXCLUDED.fly_duration";
+        try {
+            db().executeQuery(sql);
         } catch (Exception e) {
             logger.warning("PostgreSQL setDuration error: " + e.getMessage());
         }
@@ -91,18 +87,12 @@ public class FlyDBPostgreSQL implements FlyDB {
 
     @Override
     public int decrementDuration(UUID uuid, int seconds) {
-        String update = """
-            UPDATE fly
-               SET fly_duration = CASE
-                                  WHEN fly_duration = 0 THEN 0
-                                  ELSE GREATEST(fly_duration - ?, 0)
-                                  END
-             WHERE player_uuid = ?;
-            """;
-        try (PreparedStatement ps = conn.prepareStatement(update)) {
-            ps.setInt(1, seconds);
-            ps.setString(2, uuid.toString());
-            ps.executeUpdate();
+        String update = "UPDATE fly SET fly_duration = CASE " +
+            "WHEN fly_duration = 0 THEN 0 " +
+            "ELSE GREATEST(fly_duration - " + seconds + ", 0) END " +
+            "WHERE player_uuid = " + q(uuid.toString());
+        try {
+            db().executeQuery(update);
         } catch (Exception e) {
             logger.warning("PostgreSQL decrementDuration update error: " + e.getMessage());
         }
