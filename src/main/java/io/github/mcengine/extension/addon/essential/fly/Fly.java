@@ -10,9 +10,9 @@ import io.github.mcengine.extension.addon.essential.fly.database.mysql.FlyDBMySQ
 import io.github.mcengine.extension.addon.essential.fly.database.postgresql.FlyDBPostgreSQL;
 import io.github.mcengine.extension.addon.essential.fly.database.sqlite.FlyDBSQLite;
 import io.github.mcengine.extension.addon.essential.fly.listener.FlyListener;
+import io.github.mcengine.extension.addon.essential.fly.tabcompleter.FlyTabCompleter;
 import io.github.mcengine.extension.addon.essential.fly.util.ConfigUtil;
 import io.github.mcengine.extension.addon.essential.fly.util.FlyDuration;
-import io.github.mcengine.extension.addon.essential.fly.tabcompleter.FlyTabCompleter;
 import org.bukkit.Bukkit;
 import org.bukkit.command.Command;
 import org.bukkit.command.CommandMap;
@@ -21,9 +21,6 @@ import org.bukkit.plugin.Plugin;
 import org.bukkit.plugin.PluginManager;
 
 import java.lang.reflect.Field;
-import java.sql.Connection;
-import java.util.Arrays;
-import java.util.Collections;
 import java.util.List;
 
 /**
@@ -71,16 +68,15 @@ public class Fly implements IMCEngineEssentialAddOn {
                 return;
             }
 
-            // Wire DB based on database.type
-            Connection conn = MCEngineEssentialCommon.getApi().getDBConnection();
+            // Wire DB based on database.type (no direct Connection usage)
             String dbType = ConfigUtil.readDbType(plugin);
             switch (dbType == null ? "sqlite" : dbType.toLowerCase()) {
-                case "mysql" -> flyDB = new FlyDBMySQL(conn, logger);
-                case "postgresql", "postgres" -> flyDB = new FlyDBPostgreSQL(conn, logger);
-                case "sqlite" -> flyDB = new FlyDBSQLite(conn, logger);
+                case "mysql" -> flyDB = new FlyDBMySQL(logger);
+                case "postgresql", "postgres" -> flyDB = new FlyDBPostgreSQL(logger);
+                case "sqlite" -> flyDB = new FlyDBSQLite(logger);
                 default -> {
                     logger.warning("Unknown database.type='" + dbType + "', defaulting to SQLite for Fly.");
-                    flyDB = new FlyDBSQLite(conn, logger);
+                    flyDB = new FlyDBSQLite(logger);
                 }
             }
 
