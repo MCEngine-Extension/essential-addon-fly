@@ -23,6 +23,7 @@ import org.bukkit.entity.Player;
  * <ul>
  *   <li>This implementation treats {@code 0} as <b>no remaining time</b> (not unlimited).</li>
  *   <li>Per-player timers are handled by {@link FlyDuration}.</li>
+ *   <li>Only <b>bare</b> {@code /fly} or explicit {@code on}/{@code off} will toggle flight. Other subcommands (e.g., {@code get}) never toggle.</li>
  * </ul>
  */
 public class FlyCommand {
@@ -71,6 +72,12 @@ public class FlyCommand {
             return true;
         }
 
+        // /fly get  -> provide usage hint; DO NOT toggle
+        if (args.length == 1 && args[0].equalsIgnoreCase("get")) {
+            sender.sendMessage("§7Usage: §f/fly get time");
+            return true;
+        }
+
         if (!(sender instanceof Player player)) {
             sender.sendMessage("Only players can use /fly.");
             return true;
@@ -79,6 +86,7 @@ public class FlyCommand {
         // Ensure the player has a row (no-op if exists)
         flyDB.ensurePlayerRow(player.getUniqueId());
 
+        final boolean hasNoArgs = args.length == 0; // Only bare /fly may toggle
         final boolean forceOn = args.length >= 1 && args[0].equalsIgnoreCase("on");
         final boolean forceOff = args.length >= 1 && args[0].equalsIgnoreCase("off");
         final boolean isActive = flyDuration.isActive(player.getUniqueId());
@@ -89,7 +97,8 @@ public class FlyCommand {
             return true;
         }
 
-        if (forceOn || (!forceOff && !isActive)) {
+        // Activate only for explicit 'on' OR bare '/fly' when not active
+        if ((forceOn || (hasNoArgs && !isActive))) {
             // Prevent activation when player has no remaining time (0 means no time)
             int duration = flyDB.getDuration(player.getUniqueId());
             if (duration <= 0) {
@@ -103,13 +112,15 @@ public class FlyCommand {
             return true;
         }
 
-        if (forceOff || isActive) {
+        // Deactivate only for explicit 'off' OR bare '/fly' when active (toggle)
+        if (forceOff || (hasNoArgs && isActive)) {
             // Self-deactivation: also subtract the partial elapsed time since last tick and tell remaining
             flyDuration.deactivate(player.getUniqueId(), true, true);
             return true;
         }
 
-        player.sendMessage("§7You are not currently flying.");
+        // Any other subcommand that reaches here does not toggle
+        player.sendMessage("§7Unknown subcommand. §7Try: §f/fly, /fly on, /fly off, /fly get time, /fly time add <player> <seconds>");
         return true;
     }
 }
