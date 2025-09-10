@@ -14,7 +14,7 @@ import org.bukkit.entity.Player;
  * Supported syntax:
  * <ul>
  *   <li><b>/fly</b> or <b>/fly on</b> — enable flight if {@code fly_duration > 0}; prevents duplicate activation when already flying.</li>
- *   <li><b>/fly off</b> — disable flight and subtract the partial elapsed time since last tick from DB; shows formatted remaining time.</li>
+ *   <li><b>/fly off</b> — disable flight if active; if not active, informs the player.</li>
  *   <li><b>/fly time add &lt;player&gt; &lt;seconds&gt;</b> — admin add time (delegated to {@link CommandUtil}).</li>
  *   <li><b>/fly get time</b> — show your own remaining flight time in Y/H/M/S format.</li>
  * </ul>
@@ -99,22 +99,29 @@ public class FlyCommand {
 
         // Activate only for explicit 'on' OR bare '/fly' when not active
         if ((forceOn || (hasNoArgs && !isActive))) {
-            // Prevent activation when player has no remaining time (0 means no time)
             int duration = flyDB.getDuration(player.getUniqueId());
             if (duration <= 0) {
                 player.sendMessage("§cYou have no flight time remaining.");
                 return true;
             }
 
-            // Activate and report remaining time with formatted units
             flyDuration.activate(player);
             player.sendMessage("§aFlight enabled. §7Remaining: §e" + FlyDuration.formatDuration(duration) + "§7.");
             return true;
         }
 
-        // Deactivate only for explicit 'off' OR bare '/fly' when active (toggle)
-        if (forceOff || (hasNoArgs && isActive)) {
-            // Self-deactivation: also subtract the partial elapsed time since last tick and tell remaining
+        // Explicit 'off' handling
+        if (forceOff) {
+            if (!isActive) {
+                player.sendMessage("§cYou are not currently flying.");
+                return true;
+            }
+            flyDuration.deactivate(player.getUniqueId(), true, true);
+            return true;
+        }
+
+        // Bare /fly toggling OFF if active
+        if (hasNoArgs && isActive) {
             flyDuration.deactivate(player.getUniqueId(), true, true);
             return true;
         }
