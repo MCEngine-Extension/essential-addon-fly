@@ -87,19 +87,21 @@ public class FlyListener implements Listener {
      *   <li>Only processes MAIN HAND to prevent double-firing with off-hand.</li>
      * </ul>
      */
-    @EventHandler(ignoreCancelled = true)
+    @EventHandler // do NOT ignore cancelled; air-clicks are often cancelled upstream
     public void onRightClick(PlayerInteractEvent e) {
         Action a = e.getAction();
         if (a != Action.RIGHT_CLICK_AIR && a != Action.RIGHT_CLICK_BLOCK) {
             return;
         }
 
+        // Only process MAIN HAND to avoid double-fire with OFF_HAND
         if (e.getHand() != EquipmentSlot.HAND) return;
 
         Player p = e.getPlayer();
         if (p == null) return;
 
-        ItemStack hand = p.getInventory().getItemInMainHand();
+        // Use the item provided by the event (the actual used hand item)
+        ItemStack hand = e.getItem();
         if (hand == null || hand.getType().isAir() || !hand.hasItemMeta()) return;
 
         ItemMeta meta = hand.getItemMeta();
@@ -111,6 +113,7 @@ public class FlyListener implements Listener {
         Integer secs = KEY_SECONDS == null ? null : pdc.get(KEY_SECONDS, PersistentDataType.INTEGER);
         if (secs == null || secs <= 0) return;
 
+        // Prevent default behavior (like placing a head) and consume voucher
         e.setCancelled(true);
 
         try {
@@ -119,6 +122,7 @@ public class FlyListener implements Listener {
             int updated = current + secs;
             flyDB.setDuration(p.getUniqueId(), updated);
 
+            // Consume exactly one from MAIN HAND
             int amount = hand.getAmount();
             if (amount <= 1) {
                 p.getInventory().setItemInMainHand(null);
