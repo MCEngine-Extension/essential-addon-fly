@@ -81,7 +81,7 @@ public class FlyListener implements Listener {
     /**
      * Voucher consumption:
      * <ul>
-     *   <li>Right-click anywhere (air, block, entity, etc.) with an item carrying
+     *   <li>Right-click anywhere (air or block) with an item carrying
      *       {@code mcengine_essential:fly_time_add=1} and {@code mcengine_essential:fly_time} (seconds).</li>
      *   <li>Adds the encoded seconds to the player's remaining duration and consumes one item.</li>
      *   <li>Only processes MAIN HAND to prevent double-firing with off-hand.</li>
@@ -90,8 +90,7 @@ public class FlyListener implements Listener {
     @EventHandler(ignoreCancelled = true)
     public void onRightClick(PlayerInteractEvent e) {
         Action a = e.getAction();
-        if (a != Action.RIGHT_CLICK_AIR && a != Action.RIGHT_CLICK_BLOCK &&
-            a != Action.RIGHT_CLICK_ITEM) {
+        if (a != Action.RIGHT_CLICK_AIR && a != Action.RIGHT_CLICK_BLOCK) {
             return;
         }
 
