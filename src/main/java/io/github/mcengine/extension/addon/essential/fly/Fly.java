@@ -88,7 +88,7 @@ public class Fly implements IMCEngineEssentialAddOn {
 
             // Register listeners (ensures DB row on join; cancels per-player task on leave)
             PluginManager pm = Bukkit.getPluginManager();
-            pm.registerEvents(new FlyListener(logger, flyDB, flyDuration), plugin);
+            pm.registerEvents(new FlyListener(logger, flyDB, flyDuration, plugin), plugin);
 
             // Reflectively register /fly command
             Field commandMapField = Bukkit.getServer().getClass().getDeclaredField("commandMap");
