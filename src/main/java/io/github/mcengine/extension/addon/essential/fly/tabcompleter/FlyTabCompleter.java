@@ -17,7 +17,8 @@ import java.util.List;
  * Supports:
  * <ul>
  *   <li>{@code /fly} → {@code on}, {@code off}, {@code get}, {@code time} (if permitted)</li>
- *   <li>{@code /fly get} → {@code time}</li>
+ *   <li>{@code /fly get} → {@code time}, {@code item}</li>
+ *   <li>{@code /fly get item} → {@code <seconds>} or {@code <hdbId> <seconds>}</li>
  *   <li>{@code /fly time} → {@code add} (if permitted)</li>
  *   <li>{@code /fly time add <player> <seconds>} → online player names and common second values</li>
  * </ul>
@@ -45,7 +46,20 @@ public class FlyTabCompleter implements TabCompleter {
 
         // /fly get ...
         if (args.length == 2 && args[0].equalsIgnoreCase("get")) {
-            return prefixFilter(Collections.singletonList("time"), args[1]);
+            return prefixFilter(Arrays.asList("time", "item"), args[1]);
+        }
+
+        // /fly get item ...
+        if (args.length >= 3 && args[0].equalsIgnoreCase("get") && args[1].equalsIgnoreCase("item")) {
+            // If user types only 1 more arg: seconds suggestion
+            if (args.length == 3) {
+                // Could be either <seconds> (paper) or <hdbId> (head). Provide examples of seconds.
+                return prefixFilter(Arrays.asList("60", "300", "600", "1800", "3600"), args[2]);
+            }
+            // /fly get item <hdbId> <seconds>
+            if (args.length == 4) {
+                return prefixFilter(Arrays.asList("60", "300", "600", "1800", "3600"), args[3]);
+            }
         }
 
         // /fly time ...
@@ -66,7 +80,6 @@ public class FlyTabCompleter implements TabCompleter {
             }
 
             if (args.length == 4 && args[1].equalsIgnoreCase("add")) {
-                // Suggest some common second values
                 List<String> seconds = Arrays.asList("60", "120", "300", "600", "1800", "3600");
                 return prefixFilter(seconds, args[3]);
             }
@@ -75,9 +88,7 @@ public class FlyTabCompleter implements TabCompleter {
         return Collections.emptyList();
     }
 
-    /**
-     * Utility: filter a list of options by the given (lowercased) prefix.
-     */
+    /** Utility: filter a list of options by the given (lowercased) prefix. */
     private List<String> prefixFilter(List<String> options, String userInput) {
         String prefix = userInput == null ? "" : userInput.toLowerCase();
         List<String> out = new ArrayList<>();
