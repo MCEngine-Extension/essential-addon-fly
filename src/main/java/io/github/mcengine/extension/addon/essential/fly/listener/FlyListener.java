@@ -59,12 +59,10 @@ public class FlyListener implements Listener {
         this.flyDuration = flyDuration;
     }
 
-    /** Ensure the player has a DB row (with default 0) on join. */
     @EventHandler
     public void onJoin(PlayerJoinEvent e) {
         try {
-            Player p = e.getPlayer();
-            flyDB.ensurePlayerRow(p.getUniqueId());
+            flyDB.ensurePlayerRow(e.getPlayer().getUniqueId());
         } catch (Exception ex) {
             logger.warning("Failed to ensure fly row on join: " + ex.getMessage());
         }
@@ -83,8 +81,8 @@ public class FlyListener implements Listener {
     /**
      * Voucher consumption:
      * <ul>
-     *   <li>Right-click air/block with an item carrying {@code mcengine_essential:fly_time_add=1}
-     *       and {@code mcengine_essential:fly_time} (seconds).</li>
+     *   <li>Right-click anywhere (air, block, entity, etc.) with an item carrying
+     *       {@code mcengine_essential:fly_time_add=1} and {@code mcengine_essential:fly_time} (seconds).</li>
      *   <li>Adds the encoded seconds to the player's remaining duration and consumes one item.</li>
      *   <li>Only processes MAIN HAND to prevent double-firing with off-hand.</li>
      * </ul>
@@ -92,9 +90,11 @@ public class FlyListener implements Listener {
     @EventHandler(ignoreCancelled = true)
     public void onRightClick(PlayerInteractEvent e) {
         Action a = e.getAction();
-        if (a != Action.RIGHT_CLICK_AIR && a != Action.RIGHT_CLICK_BLOCK) return;
+        if (a != Action.RIGHT_CLICK_AIR && a != Action.RIGHT_CLICK_BLOCK &&
+            a != Action.RIGHT_CLICK_ITEM) {
+            return;
+        }
 
-        // Process only MAIN HAND to avoid duplicate redemption from OFF_HAND
         if (e.getHand() != EquipmentSlot.HAND) return;
 
         Player p = e.getPlayer();
@@ -106,15 +106,12 @@ public class FlyListener implements Listener {
         ItemMeta meta = hand.getItemMeta();
         PersistentDataContainer pdc = meta.getPersistentDataContainer();
 
-        // Check voucher marker
         Integer marker = KEY_MARKER == null ? null : pdc.get(KEY_MARKER, PersistentDataType.INTEGER);
         if (marker == null || marker != 1) return;
 
-        // Get exact seconds from namespace
         Integer secs = KEY_SECONDS == null ? null : pdc.get(KEY_SECONDS, PersistentDataType.INTEGER);
         if (secs == null || secs <= 0) return;
 
-        // Prevent default use (e.g., head placement) and consume our voucher
         e.setCancelled(true);
 
         try {
@@ -123,7 +120,6 @@ public class FlyListener implements Listener {
             int updated = current + secs;
             flyDB.setDuration(p.getUniqueId(), updated);
 
-            // Consume one item
             int amount = hand.getAmount();
             if (amount <= 1) {
                 p.getInventory().setItemInMainHand(null);
@@ -141,7 +137,6 @@ public class FlyListener implements Listener {
         }
     }
 
-    /** Deactivates flight for the given player and cancels their task (with partial deduction + message). */
     private void deactivate(Player p) {
         UUID uuid = p.getUniqueId();
         flyDuration.deactivate(uuid, true, true);
