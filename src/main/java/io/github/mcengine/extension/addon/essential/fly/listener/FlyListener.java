@@ -4,16 +4,16 @@ import io.github.mcengine.api.core.extension.logger.MCEngineExtensionLogger;
 import io.github.mcengine.extension.addon.essential.fly.database.FlyDB;
 import io.github.mcengine.extension.addon.essential.fly.item.FlyItem;
 import io.github.mcengine.extension.addon.essential.fly.util.FlyDuration;
-import org.bukkit.Bukkit;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
 import org.bukkit.event.block.Action;
 import org.bukkit.event.player.PlayerInteractEvent;
-
 import org.bukkit.event.player.PlayerJoinEvent;
 import org.bukkit.event.player.PlayerKickEvent;
 import org.bukkit.event.player.PlayerQuitEvent;
+import org.bukkit.inventory.EquipmentSlot;
+import org.bukkit.inventory.ItemStack;
 
 import java.util.UUID;
 
@@ -74,8 +74,10 @@ public class FlyListener implements Listener {
     /**
      * Voucher consumption:
      * <ul>
-     *   <li>Right-click air/block with an item carrying {@code mcengine_essential:fly_time_add=1} and {@code mcengine_essential:fly_time}.</li>
+     *   <li>Right-click air/block with an item carrying {@code mcengine_essential:fly_time_add=1}
+     *       and {@code mcengine_essential:fly_time}.</li>
      *   <li>Adds the encoded seconds to the player's remaining duration and consumes one item.</li>
+     *   <li>Only processes MAIN HAND to prevent double-firing with off-hand.</li>
      * </ul>
      */
     @EventHandler(ignoreCancelled = true)
@@ -83,13 +85,17 @@ public class FlyListener implements Listener {
         Action a = e.getAction();
         if (a != Action.RIGHT_CLICK_AIR && a != Action.RIGHT_CLICK_BLOCK) return;
 
+        // Process only MAIN HAND to avoid duplicate redemption from OFF_HAND
+        if (e.getHand() != EquipmentSlot.HAND) return;
+
         Player p = e.getPlayer();
         if (p == null) return;
 
-        // Prefer main hand; Paper will also fire for off-hand depending on version, but this is sufficient for common use.
-        if (e.getItem() == null) return;
+        // Read the exact stack from the correct hand
+        ItemStack hand = p.getInventory().getItemInMainHand();
+        if (hand == null || hand.getType().isAir()) return;
 
-        Integer secs = FlyItem.readSeconds(e.getItem());
+        Integer secs = FlyItem.readSeconds(hand);
         if (secs == null) return; // not a voucher
 
         // Prevent default use (e.g., head placement) and consume our voucher
@@ -99,26 +105,20 @@ public class FlyListener implements Listener {
         try {
             flyDB.ensurePlayerRow(p.getUniqueId());
             int current = Math.max(0, flyDB.getDuration(p.getUniqueId()));
-            int updated = current + Math.max(0, secs);
+            int added = Math.max(0, secs);
+            int updated = current + added;
             flyDB.setDuration(p.getUniqueId(), updated);
 
-            // Consume exactly one item from the stack
-            int amount = e.getItem().getAmount();
+            // Consume exactly one item from MAIN HAND
+            int amount = hand.getAmount();
             if (amount <= 1) {
-                // remove from hand
-                if (p.getInventory().getItemInMainHand().equals(e.getItem())) {
-                    p.getInventory().setItemInMainHand(null);
-                } else if (p.getInventory().getItemInOffHand().equals(e.getItem())) {
-                    p.getInventory().setItemInOffHand(null);
-                } else {
-                    // fallback, reduce anyway
-                    e.getItem().setAmount(0);
-                }
+                p.getInventory().setItemInMainHand(null);
             } else {
-                e.getItem().setAmount(amount - 1);
+                hand.setAmount(amount - 1);
+                p.getInventory().setItemInMainHand(hand);
             }
 
-            p.sendMessage("§aRedeemed voucher. §7Added: §e" + FlyDuration.formatDuration(secs) +
+            p.sendMessage("§aRedeemed voucher. §7Added: §e" + FlyDuration.formatDuration(added) +
                     " §7→ New remaining: §e" + FlyDuration.formatDuration(updated) + "§7.");
         } catch (Exception ex) {
             logger.warning("Failed to redeem fly voucher: " + ex.getMessage());
