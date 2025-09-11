@@ -2,8 +2,8 @@ package io.github.mcengine.extension.addon.essential.fly.listener;
 
 import io.github.mcengine.api.core.extension.logger.MCEngineExtensionLogger;
 import io.github.mcengine.extension.addon.essential.fly.database.FlyDB;
-import io.github.mcengine.extension.addon.essential.fly.item.FlyItem;
 import io.github.mcengine.extension.addon.essential.fly.util.FlyDuration;
+import org.bukkit.NamespacedKey;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
@@ -14,6 +14,9 @@ import org.bukkit.event.player.PlayerKickEvent;
 import org.bukkit.event.player.PlayerQuitEvent;
 import org.bukkit.inventory.EquipmentSlot;
 import org.bukkit.inventory.ItemStack;
+import org.bukkit.inventory.meta.ItemMeta;
+import org.bukkit.persistence.PersistentDataContainer;
+import org.bukkit.persistence.PersistentDataType;
 
 import java.util.UUID;
 
@@ -22,7 +25,7 @@ import java.util.UUID;
  * <ul>
  *   <li>Ensures a default Fly DB record (duration 0) is present when a player joins.</li>
  *   <li>On quit/kick, disables flight, cancels that player's task, and
- *       <b>subtracts partial elapsed time</b> since the last tick using {@code lastTickMillis}.</li>
+ *       subtracts partial elapsed time since the last tick using {@code lastTickMillis}.</li>
  *   <li>Detects right-click with a Fly Time voucher and grants the encoded time (consumes one item).</li>
  * </ul>
  */
@@ -36,6 +39,12 @@ public class FlyListener implements Listener {
 
     /** Per-player flight/timer manager. */
     private final FlyDuration flyDuration;
+
+    /** Namespace keys for voucher items. */
+    private static final NamespacedKey KEY_MARKER =
+            NamespacedKey.fromString("mcengine_essential:fly_time_add");
+    private static final NamespacedKey KEY_SECONDS =
+            NamespacedKey.fromString("mcengine_essential:fly_time");
 
     /**
      * Create a listener for Fly events.
@@ -75,7 +84,7 @@ public class FlyListener implements Listener {
      * Voucher consumption:
      * <ul>
      *   <li>Right-click air/block with an item carrying {@code mcengine_essential:fly_time_add=1}
-     *       and {@code mcengine_essential:fly_time}.</li>
+     *       and {@code mcengine_essential:fly_time} (seconds).</li>
      *   <li>Adds the encoded seconds to the player's remaining duration and consumes one item.</li>
      *   <li>Only processes MAIN HAND to prevent double-firing with off-hand.</li>
      * </ul>
@@ -91,25 +100,30 @@ public class FlyListener implements Listener {
         Player p = e.getPlayer();
         if (p == null) return;
 
-        // Read the exact stack from the correct hand
         ItemStack hand = p.getInventory().getItemInMainHand();
-        if (hand == null || hand.getType().isAir()) return;
+        if (hand == null || hand.getType().isAir() || !hand.hasItemMeta()) return;
 
-        Integer secs = FlyItem.readSeconds(hand);
-        if (secs == null) return; // not a voucher
+        ItemMeta meta = hand.getItemMeta();
+        PersistentDataContainer pdc = meta.getPersistentDataContainer();
+
+        // Check voucher marker
+        Integer marker = KEY_MARKER == null ? null : pdc.get(KEY_MARKER, PersistentDataType.INTEGER);
+        if (marker == null || marker != 1) return;
+
+        // Get exact seconds from namespace
+        Integer secs = KEY_SECONDS == null ? null : pdc.get(KEY_SECONDS, PersistentDataType.INTEGER);
+        if (secs == null || secs <= 0) return;
 
         // Prevent default use (e.g., head placement) and consume our voucher
         e.setCancelled(true);
 
-        // Safety: ensure row, then add time
         try {
             flyDB.ensurePlayerRow(p.getUniqueId());
             int current = Math.max(0, flyDB.getDuration(p.getUniqueId()));
-            int added = Math.max(0, secs);
-            int updated = current + added;
+            int updated = current + secs;
             flyDB.setDuration(p.getUniqueId(), updated);
 
-            // Consume exactly one item from MAIN HAND
+            // Consume one item
             int amount = hand.getAmount();
             if (amount <= 1) {
                 p.getInventory().setItemInMainHand(null);
@@ -118,8 +132,10 @@ public class FlyListener implements Listener {
                 p.getInventory().setItemInMainHand(hand);
             }
 
-            p.sendMessage("§aRedeemed voucher. §7Added: §e" + FlyDuration.formatDuration(added) +
-                    " §7→ New remaining: §e" + FlyDuration.formatDuration(updated) + "§7.");
+            p.sendMessage("§aRedeemed voucher. §7Added: §e" +
+                    FlyDuration.formatDuration(secs) +
+                    " §7→ New remaining: §e" +
+                    FlyDuration.formatDuration(updated) + "§7.");
         } catch (Exception ex) {
             logger.warning("Failed to redeem fly voucher: " + ex.getMessage());
         }
@@ -128,7 +144,6 @@ public class FlyListener implements Listener {
     /** Deactivates flight for the given player and cancels their task (with partial deduction + message). */
     private void deactivate(Player p) {
         UUID uuid = p.getUniqueId();
-        // Disable flight and cancel that player's task; count partial elapsed time and inform player
         flyDuration.deactivate(uuid, true, true);
     }
 }
